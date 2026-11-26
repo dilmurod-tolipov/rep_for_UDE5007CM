@@ -41,6 +41,11 @@ const config = {
   // Only disable this for a platform that presents a self-signed certificate.
   databaseSslVerify: !boolEnv('PGSSL_NO_VERIFY', false),
   databasePoolMax: Number.parseInt(process.env.PGPOOL_MAX, 10) || 10,
+
+  // bcrypt cost factor. 12 means 2^12 key-expansion rounds, roughly a quarter
+  // of a second per hash, which is cheap for a login and expensive for anyone
+  // attempting an offline brute-force against a stolen database.
+  bcryptRounds: Number.parseInt(process.env.BCRYPT_ROUNDS, 10) || 12,
 };
 
 module.exports = config;

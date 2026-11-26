@@ -3,6 +3,8 @@
 const path = require('node:path');
 const express = require('express');
 
+const { notFoundHandler, errorHandler } = require('./middleware/error-handler');
+const authRouter = require('./routes/auth');
 const healthRouter = require('./routes/health');
 
 const app = express();
@@ -21,5 +23,11 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // REST API.
 app.use('/api', healthRouter);
+app.use('/api', authRouter);
+
+// Unmatched API route, then the single error-to-response boundary. Both must be
+// registered after every route.
+app.use('/api', notFoundHandler);
+app.use(errorHandler);
 
 module.exports = app;

@@ -14,7 +14,7 @@ for how the system evolved.
 | --- | --- |
 | Express server and project structure | in place |
 | PostgreSQL schema and data access | in place |
-| Authentication and authorisation | planned |
+| Authentication and authorisation | registration done, login next |
 | REST API (books, categories, loans) | planned |
 | Responsive Bootstrap frontend | planned |
 | Automated tests | planned |
@@ -73,11 +73,66 @@ same title at once.
 Database commands:
 
 ```bash
-npm run db:migrate   # apply db/schema.sql (idempotent, safe to re-run)
-npm run db:seed      # load db/seed.sql sample categories and books
-npm run db:setup     # migrate, then seed
-npm run db:reset     # DROP every table, then re-apply the schema (development only)
+npm run db:migrate      # apply db/schema.sql (idempotent, safe to re-run)
+npm run db:seed         # load db/seed.sql sample categories and books
+npm run db:seed:users   # create the demo librarian and member accounts
+npm run db:setup        # migrate, then seed both
+npm run db:reset        # DROP every table, then re-apply the schema (development only)
 ```
+
+## Accounts and security
+
+Passwords are hashed with **bcrypt** at cost factor 12 and never stored or logged in
+plain text. bcrypt is used instead of a plain digest such as SHA-256 because it is
+deliberately slow and individually salted, so identical passwords produce different
+hashes and pre-computed tables are useless. The cost factor is stored inside each
+hash, so it can be raised later without invalidating existing accounts.
+
+Self-registration always creates a `member`. The `role` column is set by the server
+and is never read from the request body, so a client cannot grant itself librarian
+rights by adding a field to the JSON it posts.
+
+Every input is validated server-side with `express-validator` before a handler runs.
+Browser-side validation is added later for responsiveness, but it is treated as a
+convenience only: anything can post directly to the API, so the server repeats every
+check.
+
+Demo accounts created by `npm run db:seed:users` (development only; override with
+`SEED_LIBRARIAN_PASSWORD` and `SEED_MEMBER_PASSWORD` on a publicly reachable database):
+
+| Email | Password | Role |
+| --- | --- | --- |
+| `librarian@library.test` | `Librarian#2026` | librarian |
+| `member@library.test` | `Member#2026` | member |
+
+## API
+
+Errors share one shape, so the frontend can handle them uniformly:
+
+```json
+{ "error": { "message": "...", "code": "VALIDATION_FAILED", "details": [ { "field": "email", "message": "..." } ] } }
+```
+
+### `POST /api/auth/register`
+
+Creates a member account.
+
+```http
+POST /api/auth/register
+Content-Type: application/json
+
+{ "fullName": "Dilmurod Tolipov", "email": "d.tolipov@example.com", "password": "Str0ngPass!" }
+```
+
+| Status | Meaning |
+| --- | --- |
+| `201 Created` | account created; the new user is returned without any password field |
+| `409 Conflict` | the email address is already registered (matched case-insensitively) |
+| `422 Unprocessable Content` | one or more fields failed validation; `details` names each field |
+| `400 Bad Request` | the request body was not valid JSON |
+
+Password rules: at least 8 characters, at most 72 bytes (bcrypt's limit), containing
+at least one letter and one digit.
 
 ## Environment variables
 
@@ -92,6 +147,7 @@ to version control. See [`.env.example`](.env.example) for the full list.
 | `PGSSL` | `true` when the database requires TLS (managed hosting) |
 | `PGSSL_NO_VERIFY` | `true` only for a provider with a self-signed certificate |
 | `PGPOOL_MAX` | Maximum pooled PostgreSQL connections (default 10) |
+| `BCRYPT_ROUNDS` | bcrypt cost factor (default 12) |
 | `JWT_SECRET` | Signing key for authentication tokens |
 | `JWT_EXPIRES_IN` | Token lifetime, e.g. `2h` |
 | `CORS_ORIGINS` | Comma separated list of allowed browser origins |
@@ -104,14 +160,21 @@ src/
   app.js           Express application, middleware pipeline, route mounting
   config/env.js    environment variable loading, validation and defaults
   db/index.js      PostgreSQL pool, parameterised query and transaction helpers
-  routes/          REST API route modules
+  routes/          Express routers, mapping URLs to controllers
+  controllers/     request handling and response shaping
+  services/        reusable logic such as password hashing
+  repositories/    all SQL, one module per table group
+  validators/      express-validator rule sets per endpoint
+  middleware/      validation, async wrapper, error handling
+  utils/           AppError and small shared helpers
 db/
   schema.sql       tables, constraints, indexes and triggers
   seed.sql         sample catalogue data for development
   drop.sql         teardown used by npm run db:reset
 scripts/
   migrate.js       applies the schema
-  seed.js          loads the sample data
+  seed.js          loads the sample catalogue
+  seed-users.js    creates the demo accounts with hashed passwords
 public/            static frontend assets served by Express
 ```
 
