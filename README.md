@@ -29,8 +29,9 @@ for how the system evolved.
 
 ## Running locally
 
-Requirements: Node.js 20 or newer, and (from the next development step onwards)
-a local PostgreSQL 14+ instance.
+Requirements: Node.js 20 or newer and a PostgreSQL 14+ database. Either a local
+instance or a free managed one (Neon, Render, Supabase) works; put its connection
+string in `DATABASE_URL` and set `PGSSL=true` for a managed instance.
 
 ```bash
 git clone https://github.com/dilmurod-tolipov/rep_for_UDE5007CM.git
@@ -47,7 +48,12 @@ only when PostgreSQL can be queried, and `503` otherwise.
 
 ## Database
 
-PostgreSQL with five related tables. All access goes through parameterised SQL
+The application targets PostgreSQL 14 or newer and is developed against a managed
+[Neon](https://neon.tech) PostgreSQL 18 instance in the `eu-central-1` region. The
+connection is made over TLS with the server certificate verified, which is why
+`PGSSL=true` and `sslmode=require` appear in the environment for any hosted database.
+
+Five related tables. All access goes through parameterised SQL
 (`$1`, `$2`, ...) in [`src/db/index.js`](src/db/index.js), so values are bound by the
 driver and never interpolated into a statement.
 
@@ -84,6 +90,7 @@ to version control. See [`.env.example`](.env.example) for the full list.
 | `PORT` | Port the HTTP server binds to |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `PGSSL` | `true` when the database requires TLS (managed hosting) |
+| `PGSSL_NO_VERIFY` | `true` only for a provider with a self-signed certificate |
 | `PGPOOL_MAX` | Maximum pooled PostgreSQL connections (default 10) |
 | `JWT_SECRET` | Signing key for authentication tokens |
 | `JWT_EXPIRES_IN` | Token lifetime, e.g. `2h` |

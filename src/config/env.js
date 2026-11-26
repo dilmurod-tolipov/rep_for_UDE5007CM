@@ -37,6 +37,9 @@ const config = {
   databaseUrl: requireEnv('DATABASE_URL'),
   // Managed PostgreSQL requires TLS; a local instance normally does not.
   databaseSsl: boolEnv('PGSSL', isProduction),
+  // The server certificate is verified against the system CA store by default.
+  // Only disable this for a platform that presents a self-signed certificate.
+  databaseSslVerify: !boolEnv('PGSSL_NO_VERIFY', false),
   databasePoolMax: Number.parseInt(process.env.PGPOOL_MAX, 10) || 10,
 };
 

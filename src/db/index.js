@@ -12,7 +12,10 @@ const describeError = require('./describe-error');
  */
 const pool = new Pool({
   connectionString: config.databaseUrl,
-  ssl: config.databaseSsl ? { rejectUnauthorized: false } : false,
+  // When TLS is enabled the server certificate is verified, so the connection
+  // is protected against interception and not merely encrypted. PGSSL_NO_VERIFY
+  // exists only for platforms that present a self-signed certificate.
+  ssl: config.databaseSsl ? { rejectUnauthorized: config.databaseSslVerify } : false,
   max: config.databasePoolMax,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
