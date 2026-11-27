@@ -50,4 +50,30 @@ const registerRules = [
     .withMessage('Your password must contain at least one number.'),
 ];
 
-module.exports = { registerRules };
+/**
+ * Login rules are deliberately minimal: the password is not re-checked against
+ * the registration policy, because an account created before a policy change
+ * must still be able to sign in. Only presence and basic shape are enforced.
+ */
+const loginRules = [
+  body('email')
+    .exists({ values: 'falsy' })
+    .withMessage('Please enter your email address.')
+    .bail()
+    .trim()
+    .isEmail()
+    .withMessage('Please enter a valid email address.')
+    .bail()
+    .isLength({ max: 255 })
+    .withMessage('That email address is too long.')
+    .normalizeEmail({ gmail_remove_dots: false }),
+
+  body('password')
+    .exists({ values: 'falsy' })
+    .withMessage('Please enter your password.')
+    .bail()
+    .isLength({ max: 200 })
+    .withMessage('That password is too long.'),
+];
+
+module.exports = { registerRules, loginRules };

@@ -14,7 +14,7 @@ for how the system evolved.
 | --- | --- |
 | Express server and project structure | in place |
 | PostgreSQL schema and data access | in place |
-| Authentication and authorisation | registration done, login next |
+| Authentication and authorisation | in place |
 | REST API (books, categories, loans) | planned |
 | Responsive Bootstrap frontend | planned |
 | Automated tests | planned |
@@ -92,6 +92,38 @@ Self-registration always creates a `member`. The `role` column is set by the ser
 and is never read from the request body, so a client cannot grant itself librarian
 rights by adding a field to the JSON it posts.
 
+### Sessions over a stateless protocol
+
+HTTP carries nothing that links two requests from the same person, so the identity
+has to travel with every request. This application uses a **signed JSON Web Token**
+(HS256) rather than server-side sessions, which keeps the API free of shared session
+storage and able to run on more than one instance.
+
+The token is *signed, not encrypted*: anyone holding it can read the payload, so it
+carries only the user id, the role and the standard timing claims. Integrity is the
+guarantee — altering a single byte invalidates the signature. The permitted algorithm
+is pinned on verification, which defeats the `"alg": "none"` substitution attack, and
+the issuer and audience are checked so a token minted for something else is refused.
+
+Two transports are accepted for the same token:
+
+| Transport | Used by | Why |
+| --- | --- | --- |
+| `lms_token` cookie — `HttpOnly; SameSite=Lax; Secure` in production | the browser frontend | JavaScript cannot read an httpOnly cookie, so an injected script cannot steal the token, unlike `localStorage`. `SameSite=Lax` stops it riding along with cross-site form posts, which blocks CSRF on state-changing requests |
+| `Authorization: Bearer <token>` | Postman and other API clients | what the protocol section of the report demonstrates, and what a non-browser client needs |
+
+Because a JWT cannot be revoked without reintroducing server-side state, two things
+limit the damage from a leaked token: the lifetime is short (`JWT_EXPIRES_IN`, two
+hours by default), and the user record is re-read from the database on every request,
+so deactivating an account or changing a role takes effect immediately rather than
+whenever the token happens to expire. Signing out therefore means discarding the
+credential: the cookie is cleared and a bearer client stops sending it.
+
+Login answers a wrong password and an unregistered email with the identical message
+and comparable timing — a bcrypt comparison is performed against a dummy hash when no
+account matches — so the endpoint cannot be used to discover which addresses are
+registered.
+
 Every input is validated server-side with `express-validator` before a handler runs.
 Browser-side validation is added later for responsiveness, but it is treated as a
 convenience only: anything can post directly to the API, so the server repeats every
@@ -134,6 +166,48 @@ Content-Type: application/json
 Password rules: at least 8 characters, at most 72 bytes (bcrypt's limit), containing
 at least one letter and one digit.
 
+### `POST /api/auth/login`
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{ "email": "member@library.test", "password": "Member#2026" }
+```
+
+Returns `200` with `{ user, token, expiresAt }` and sets the `lms_token` cookie:
+
+```http
+HTTP/1.1 200 OK
+Set-Cookie: lms_token=eyJhbGciOi...; Max-Age=7200; Path=/; HttpOnly; SameSite=Lax
+```
+
+| Status | Meaning |
+| --- | --- |
+| `200 OK` | signed in; the token is returned in the body and set as a cookie |
+| `401 Unauthorized` | wrong credentials or a disabled account, with one generic message |
+| `422 Unprocessable Content` | the email or password field was missing or malformed |
+
+### `POST /api/auth/logout`
+
+Clears the cookie. Always `200`, so the frontend can call it without checking first.
+
+### `GET /api/auth/me`
+
+Returns the signed-in user, for restoring session state on page load. Requires a token.
+
+| Status | Meaning |
+| --- | --- |
+| `200 OK` | `{ user }` |
+| `401 Unauthorized` | no token, an invalid or expired token, or a deactivated account |
+
+### Authorisation
+
+`requireAuth` rejects a request without a valid token; `requireRole('librarian')`
+rejects a signed-in user whose role is not permitted. The two failures are kept
+distinct on purpose — `401` tells the frontend to send the visitor to the login page,
+`403` tells it to show a "not allowed" message to someone already signed in.
+
 ## Environment variables
 
 All configuration is supplied through environment variables; no secret is committed
@@ -149,7 +223,7 @@ to version control. See [`.env.example`](.env.example) for the full list.
 | `PGPOOL_MAX` | Maximum pooled PostgreSQL connections (default 10) |
 | `BCRYPT_ROUNDS` | bcrypt cost factor (default 12) |
 | `JWT_SECRET` | Signing key for authentication tokens |
-| `JWT_EXPIRES_IN` | Token lifetime, e.g. `2h` |
+| `JWT_EXPIRES_IN` | Token lifetime, e.g. `2h` (default `2h`) |
 | `CORS_ORIGINS` | Comma separated list of allowed browser origins |
 
 ## Project layout
@@ -162,10 +236,10 @@ src/
   db/index.js      PostgreSQL pool, parameterised query and transaction helpers
   routes/          Express routers, mapping URLs to controllers
   controllers/     request handling and response shaping
-  services/        reusable logic such as password hashing
+  services/        reusable logic: password hashing, token issuing
+  middleware/      authentication, authorisation, validation, error handling
   repositories/    all SQL, one module per table group
   validators/      express-validator rule sets per endpoint
-  middleware/      validation, async wrapper, error handling
   utils/           AppError and small shared helpers
 db/
   schema.sql       tables, constraints, indexes and triggers

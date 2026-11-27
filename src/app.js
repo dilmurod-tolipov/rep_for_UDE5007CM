@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const cookieParser = require('cookie-parser');
 const express = require('express');
 
 const { notFoundHandler, errorHandler } = require('./middleware/error-handler');
@@ -17,6 +18,9 @@ app.set('trust proxy', 1);
 // receives small JSON documents.
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+
+// Reads the httpOnly authentication cookie into req.cookies.
+app.use(cookieParser());
 
 // Static frontend.
 app.use(express.static(path.join(__dirname, '..', 'public')));

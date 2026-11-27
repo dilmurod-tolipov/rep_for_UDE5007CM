@@ -29,6 +29,21 @@ function boolEnv(name, fallback) {
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
 
+// A weak signing key defeats the whole token scheme, so a short one is refused
+// outright in production rather than quietly accepted.
+function requireSecret(name, minLength) {
+  const value = requireEnv(name);
+
+  if (isProduction && value.length < minLength) {
+    throw new Error(
+      `${name} must be at least ${minLength} characters in production. ` +
+        'Generate one with: openssl rand -hex 48',
+    );
+  }
+
+  return value;
+}
+
 const config = {
   nodeEnv,
   isProduction,
@@ -41,6 +56,14 @@ const config = {
   // Only disable this for a platform that presents a self-signed certificate.
   databaseSslVerify: !boolEnv('PGSSL_NO_VERIFY', false),
   databasePoolMax: Number.parseInt(process.env.PGPOOL_MAX, 10) || 10,
+
+  jwtSecret: requireSecret('JWT_SECRET', 32),
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '2h',
+  jwtIssuer: 'library-management-system',
+  jwtAudience: 'library-management-system/api',
+
+  // Name of the httpOnly cookie carrying the token.
+  authCookieName: 'lms_token',
 
   // bcrypt cost factor. 12 means 2^12 key-expansion rounds, roughly a quarter
   // of a second per hash, which is cheap for a login and expensive for anyone

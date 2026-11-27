@@ -20,6 +20,22 @@ function findByEmail(email) {
 }
 
 /**
+ * Loads the columns needed to authenticate a login attempt, including the
+ * password hash. This is the only query that selects the hash; everything else
+ * uses PUBLIC_COLUMNS so it cannot be returned by accident.
+ *
+ * @param {string} email
+ */
+function findCredentialsByEmail(email) {
+  return db.queryOne(
+    `SELECT id, full_name, email, role, is_active, password_hash, created_at
+       FROM users
+      WHERE lower(email) = lower($1)`,
+    [email],
+  );
+}
+
+/**
  * Finds a user by id.
  * @param {number} id
  */
@@ -50,4 +66,11 @@ function isDuplicateEmail(error) {
   return error && error.code === '23505' && String(error.constraint).includes('email');
 }
 
-module.exports = { findByEmail, findById, create, isDuplicateEmail, PUBLIC_COLUMNS };
+module.exports = {
+  findByEmail,
+  findCredentialsByEmail,
+  findById,
+  create,
+  isDuplicateEmail,
+  PUBLIC_COLUMNS,
+};
