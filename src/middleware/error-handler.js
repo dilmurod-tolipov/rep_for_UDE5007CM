@@ -29,11 +29,18 @@ function errorHandler(error, req, res, next) {
     return;
   }
 
-  // Malformed JSON body: express.json() raises a SyntaxError with a status.
-  if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
-    res.status(400).json({
-      error: { message: 'The request body is not valid JSON.', code: 'INVALID_JSON' },
-    });
+  // Body-parser rejections. These are client mistakes, not server faults, so
+  // they must keep their own status instead of falling through to a 500.
+  const bodyParserErrors = {
+    'entity.parse.failed': [400, 'The request body is not valid JSON.', 'INVALID_JSON'],
+    'entity.too.large': [413, 'The request body is too large.', 'PAYLOAD_TOO_LARGE'],
+    'encoding.unsupported': [415, 'That content encoding is not supported.', 'UNSUPPORTED_ENCODING'],
+    'request.aborted': [400, 'The request was aborted before it completed.', 'REQUEST_ABORTED'],
+  };
+
+  if (error.type && bodyParserErrors[error.type]) {
+    const [status, message, code] = bodyParserErrors[error.type];
+    res.status(status).json({ error: { message, code } });
     return;
   }
 

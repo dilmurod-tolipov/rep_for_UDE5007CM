@@ -57,6 +57,19 @@ const config = {
   databaseSslVerify: !boolEnv('PGSSL_NO_VERIFY', false),
   databasePoolMax: Number.parseInt(process.env.PGPOOL_MAX, 10) || 10,
 
+  // Browser origins allowed to call the API with credentials. The frontend is
+  // served by this same process, so same-origin requests need no entry here;
+  // the list exists for a separately hosted or locally served frontend.
+  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+
+  // Rate limiting windows, in minutes and requests per window per IP.
+  rateLimitWindowMinutes: Number.parseInt(process.env.RATE_LIMIT_WINDOW_MINUTES, 10) || 15,
+  rateLimitApiMax: Number.parseInt(process.env.RATE_LIMIT_API_MAX, 10) || 300,
+  rateLimitAuthMax: Number.parseInt(process.env.RATE_LIMIT_AUTH_MAX, 10) || 10,
+
   jwtSecret: requireSecret('JWT_SECRET', 32),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '2h',
   jwtIssuer: 'library-management-system',

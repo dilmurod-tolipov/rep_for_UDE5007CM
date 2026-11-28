@@ -17,6 +17,7 @@ for how the system evolved.
 | Authentication and authorisation | in place |
 | REST API (books, categories, loans) | planned |
 | Responsive Bootstrap frontend | planned |
+| Security headers, CORS and rate limiting | in place |
 | Automated tests | planned |
 | Cloud deployment | planned |
 
@@ -92,6 +93,26 @@ Self-registration always creates a `member`. The `role` column is set by the ser
 and is never read from the request body, so a client cannot grant itself librarian
 rights by adding a field to the JSON it posts.
 
+### Server-level protections
+
+| Measure | Implementation | What it stops |
+| --- | --- | --- |
+| Security headers | `helmet` with an application-specific CSP | `default-src 'self'` with Bootstrap on jsDelivr and covers on Open Library explicitly listed, so an injected script pointing anywhere else is refused by the browser. Also `nosniff`, `X-Frame-Options: SAMEORIGIN`, `frame-ancestors 'none'`, `object-src 'none'`, `Referrer-Policy: same-origin` |
+| HSTS | `Strict-Transport-Security`, two years, production only | Downgrade to plain HTTP after the first visit. Not sent in development, where there is no TLS |
+| CORS | explicit origin allow-list, `credentials: true` | Any site making authenticated cross-origin calls. `credentials: true` is incompatible with `*`, which is the point: the origin is echoed only when it is on the list, otherwise the request is refused with 403 |
+| Rate limiting | `express-rate-limit`, two tiers per IP | Brute-force password guessing (10 failed sign-ins per 15 minutes) and general flooding (300 requests per 15 minutes). Successful sign-ins are not counted, and the limiter runs *before* body parsing so a rejected request never costs a bcrypt hash |
+| Body size limit | `express.json({ limit: '100kb' })` | Memory exhaustion from a huge payload; oversized bodies answer `413` |
+| Framework disclosure | `x-powered-by` disabled | Free reconnaissance about the stack |
+| SQL injection | bound parameters everywhere (see Database) | Injection through any user-supplied value |
+| Password storage | bcrypt, cost 12 | Useful plaintext recovery from a stolen database |
+
+Known trade-off: the sign-in limiter keys on IP address, so several people behind
+one shared address share a failure budget and could be locked out for the window by
+someone else's wrong passwords. The alternative, keying on the submitted email,
+lets an attacker sidestep the limit by rotating addresses. For a library system the
+IP-based limit is the safer default; a production deployment would combine both and
+add a per-account lockout with an email notification.
+
 ### Sessions over a stateless protocol
 
 HTTP carries nothing that links two requests from the same person, so the identity
@@ -139,7 +160,20 @@ Demo accounts created by `npm run db:seed:users` (development only; override wit
 
 ## API
 
-Errors share one shape, so the frontend can handle them uniformly:
+Errors share one shape, so the frontend can handle them uniformly, and every
+failure mode has its own status rather than collapsing into a generic 500:
+
+| Status | When |
+| --- | --- |
+| `400` | malformed JSON, aborted request |
+| `401` / `403` | not signed in / signed in without permission |
+| `404` | unknown API route or missing record |
+| `413` | request body over 100 kB |
+| `415` | unsupported content encoding |
+| `422` | validation failure, with a per-field `details` array |
+| `429` | rate limit exceeded |
+| `500` | unexpected fault; details are logged server-side only |
+
 
 ```json
 { "error": { "message": "...", "code": "VALIDATION_FAILED", "details": [ { "field": "email", "message": "..." } ] } }
@@ -225,6 +259,9 @@ to version control. See [`.env.example`](.env.example) for the full list.
 | `JWT_SECRET` | Signing key for authentication tokens |
 | `JWT_EXPIRES_IN` | Token lifetime, e.g. `2h` (default `2h`) |
 | `CORS_ORIGINS` | Comma separated list of allowed browser origins |
+| `RATE_LIMIT_WINDOW_MINUTES` | Rate limit window (default 15) |
+| `RATE_LIMIT_API_MAX` | Requests per window per IP across the API (default 300) |
+| `RATE_LIMIT_AUTH_MAX` | Failed sign-in attempts per window per IP (default 10) |
 
 ## Project layout
 
